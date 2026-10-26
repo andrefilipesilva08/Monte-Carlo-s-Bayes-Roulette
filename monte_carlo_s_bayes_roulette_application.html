@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monte Carlo's Bayes Roulette</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            casino: {
+              gold: '#d97706',
+              goldLight: '#fbbf24'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts: Playfair Display (classic serif/cursive elegance) & Cinzel (luxury headings) & Outfit (clean numbers) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Playfair Display', Georgia, serif;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    
+    /* Dark & Light Theme Backgrounds */
+    html.dark body {
+      background: radial-gradient(circle at center, #0a1f14 0%, #030a06 100%);
+      color: #f8fafc;
+    }
+    html:not(.dark) body {
+      background: radial-gradient(circle at center, #f4f6f0 0%, #e2e8df 100%);
+      color: #0f172a;
+    }
+
+    h1, h2, h3, .font-luxury {
+      font-family: 'Cinzel', serif;
+    }
+    .font-num {
+      font-family: 'Outfit', sans-serif;
+    }
+
+    /* Vertical Roulette Table Grid */
+    .table-container {
+      display: grid;
+      grid-template-columns: 52px 46px 46px 46px;
+      grid-template-rows: 48px repeat(12, 42px) 44px;
+      gap: 3px;
+      background-color: #011109;
+      padding: 10px;
+      border: 3px solid #d97706;
+      border-radius: 12px;
+      box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(0,0,0,0.5);
+      position: relative;
+      user-select: none;
+      width: fit-content;
+    }
+
+    .cell-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.15rem;
+      border-radius: 5px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+      border: 2px solid rgba(245, 158, 11, 0.85);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.65), 0 1px 3px rgba(0,0,0,0.5);
+    }
+
+    .cell-red { background-color: #991b1b; color: #ffffff; }
+    .cell-black { background-color: #0f172a; color: #ffffff; }
+    .cell-green { background-color: #065f46; color: #ffffff; }
+
+    .cell-outside {
+      background-color: #064e3b;
+      color: #fef08a;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: 'Cinzel', serif;
+      letter-spacing: 0.05em;
+      border: 2px solid #d97706;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+      padding: 2px;
+      transition: all 0.2s;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+    }
+
+    .cell-number:hover, .cell-outside:hover {
+      filter: brightness(1.3);
+      border-color: #fbbf24;
+      transform: scale(1.02);
+      z-index: 10;
+    }
+
+    /* Distinct Split & Corner Hitbox Dividers */
+    .hitbox-v-split {
+      position: absolute;
+      bottom: -6px;
+      left: 10%;
+      width: 80%;
+      height: 10px;
+      z-index: 20;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all 0.2s;
+    }
+    .hitbox-v-split:hover {
+      background: rgba(251, 191, 36, 0.9) !important;
+      box-shadow: 0 0 8px #fbbf24;
+    }
+
+    .hitbox-h-split {
+      position: absolute;
+      right: -6px;
+      top: 10%;
+      width: 10px;
+      height: 80%;
+      z-index: 20;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all 0.2s;
+    }
+    .hitbox-h-split:hover {
+      background: rgba(251, 191, 36, 0.9) !important;
+      box-shadow: 0 0 8px #fbbf24;
+    }
+
+    .hitbox-corner {
+      position: absolute;
+      right: -6px;
+      bottom: -6px;
+      width: 12px;
+      height: 12px;
+      z-index: 30;
+      cursor: pointer;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+    .hitbox-corner:hover {
+      background: rgba(251, 191, 36, 1) !important;
+      box-shadow: 0 0 10px #fbbf24;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-slate-950">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-amber-900/40 dark:bg-slate-950/85 bg-white/90 backdrop-blur sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-300 flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <span class="text-slate-950 font-black text-xl">🎰</span>
+        </div>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-black tracking-wider bg-gradient-to-r from-amber-700 via-amber-600 to-yellow-600 dark:from-amber-100 dark:via-amber-300 dark:to-yellow-500 bg-clip-text text-transparent font-luxury">
+            Monte Carlo's Bayes Roulette
+          </h1>
+          <p class="text-xs text-amber-900/70 dark:text-amber-200/60 italic hidden sm:block" id="header-subtitle">
+            Non-Replacement Probability Engine & Recency Analysis
+          </p>
+        </div>
+      </div>
+
+      <!-- Controls: Theme Toggle & Language Selector -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Light / Dark Theme Toggle Button -->
+        <button onclick="toggleTheme()" id="theme-toggle-btn" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-amber-600/40 dark:bg-emerald-950/90 bg-stone-100 hover:bg-stone-200 dark:hover:bg-emerald-900 text-xs font-semibold text-amber-800 dark:text-amber-300 shadow-inner transition">
+          <span id="theme-icon">☀️</span>
+          <span id="theme-text" class="font-luxury">Light</span>
+        </button>
+
+        <!-- Language Selector -->
+        <div class="flex items-center space-x-2 dark:bg-emerald-950/90 bg-stone-100 border border-amber-600/40 px-3 py-1.5 rounded-xl shadow-inner">
+          <span class="text-xs font-semibold text-amber-800 dark:text-amber-300 tracking-wider font-luxury" id="lbl-lang">Language:</span>
+          <select id="lang-select" onchange="switchLanguage(this.value)" class="dark:bg-slate-900 bg-white dark:text-amber-100 text-slate-800 text-xs font-medium rounded-lg px-2.5 py-1 border border-amber-500/40 focus:outline-none focus:border-amber-400">
+            <option value="en">English (EN)</option>
+            <option value="es">Español (ES)</option>
+            <option value="pt">Português (PT)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full space-y-6">
+
+    <!-- Navigation Tabs & Right-Aligned Stats Bar -->
+    <div class="flex flex-col sm:flex-row items-center justify-between border-b border-amber-900/30 pb-2 gap-4">
+      <nav class="flex space-x-2 dark:bg-slate-950/80 bg-white/80 p-1.5 rounded-xl border border-amber-600/30 w-full sm:w-auto font-luxury shadow-sm" aria-label="Tabs">
+        <button onclick="switchTab('sim')" id="tab-btn-sim" class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all duration-200 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md">
+          🎯 <span id="txt-tab-sim">Wheel Simulator</span>
+        </button>
+        <button onclick="switchTab('prac')" id="tab-btn-prac" class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 dark:text-amber-100/70 text-slate-600 hover:text-amber-600 dark:hover:text-amber-300 hover:bg-amber-500/10">
+          📊 <span id="txt-tab-prac">Practical Mode</span>
+        </button>
+        <button onclick="switchTab('math')" id="tab-btn-math" class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 dark:text-amber-100/70 text-slate-600 hover:text-amber-600 dark:hover:text-amber-300 hover:bg-amber-500/10">
+          📐 <span id="txt-tab-math">Math Theory</span>
+        </button>
+      </nav>
+
+      <!-- Global Engine Stats Badge (Right-aligned) -->
+      <div class="flex items-center space-x-4 text-xs dark:bg-slate-950/80 bg-white/80 px-4 py-2 rounded-xl border border-amber-600/30 font-luxury shadow-sm">
+        <div class="dark:text-amber-200/80 text-slate-700">Spins Logged: <span id="stat-spins-count" class="font-bold text-amber-600 dark:text-amber-400 font-num">0</span></div>
+        <div class="h-3 w-px bg-amber-900/30"></div>
+        <div class="dark:text-amber-200/80 text-slate-700">Active Model: <span class="font-bold text-emerald-600 dark:text-emerald-400">Bayesian Decay</span></div>
+      </div>
+    </div>
+
+    <!-- TAB 1: WHEEL SIMULATOR -->
+    <section id="tab-sim" class="flex flex-col lg:flex-row gap-6 items-start justify-center">
+      
+      <!-- LEFT COLUMN: Wheel + Spin Button + Suggestions Placed Below -->
+      <div class="flex-1 w-full dark:bg-slate-950/70 bg-white/80 border border-amber-600/30 rounded-2xl p-5 shadow-xl backdrop-blur flex flex-col items-center space-y-4">
+        
+        <!-- Live Result Banner -->
+        <div class="w-full flex items-center justify-between dark:bg-emerald-950/50 bg-stone-100 border border-amber-600/30 p-3.5 rounded-xl shadow-inner">
+          <div>
+            <div class="text-[11px] uppercase tracking-wider dark:text-amber-200/70 text-slate-600 font-luxury" id="lbl-last-outcome">Last Outcome</div>
+            <div id="sim-last-result" class="text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5 font-luxury">
+              -- (None)
+            </div>
+          </div>
+          <div id="sim-outcome-badge" class="px-3 py-1 rounded-lg text-xs font-bold font-luxury dark:bg-slate-900 bg-stone-200 dark:text-amber-200/60 text-slate-600 border border-amber-700/30">
+            Awaiting Spin
+          </div>
+        </div>
+
+        <!-- SVG Roulette Wheel Display -->
+        <div class="relative flex items-center justify-center py-2 min-h-[300px]">
+          <svg id="roulette-container" viewBox="0 0 400 400" class="w-72 h-72 sm:w-80 sm:h-80 drop-shadow-2xl relative z-10">
+            <!-- Outer Gold Rim -->
+            <circle cx="200" cy="200" r="195" fill="#1c1106" stroke="#d97706" stroke-width="6" />
+            <circle cx="200" cy="200" r="185" fill="#03150d" stroke="#b45309" stroke-width="2" />
+
+            <!-- Spinning Wheel Slices Group -->
+            <g id="roulette-wheel-svg"></g>
+
+            <!-- Inner Brass Turret -->
+            <circle cx="200" cy="200" r="55" fill="url(#brassGradient)" stroke="#d97706" stroke-width="3" />
+            <circle cx="200" cy="200" r="18" fill="#030a06" />
+            
+            <defs>
+              <linearGradient id="brassGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#fef08a" />
+                <stop offset="50%" stop-color="#d97706" />
+                <stop offset="100%" stop-color="#78350f" />
+              </linearGradient>
+            </defs>
+
+            <!-- Ball Group -->
+            <g id="ball-svg">
+              <circle id="ball-circle" cx="200" cy="38" r="6.5" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5" class="drop-shadow-md" />
+            </g>
+          </svg>
+        </div>
+
+        <!-- Spin Controls -->
+        <div class="w-full flex gap-3">
+          <button id="btn-spin" onclick="runSpinAnimation()" class="flex-1 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black py-3 px-6 rounded-xl shadow-lg transition duration-200 transform active:scale-95 font-luxury text-sm">
+            🎡 <span id="btn-spin-text">Spin Wheel (Bayesian Weighted)</span>
+          </button>
+          <button onclick="resetSimulation()" class="px-4 py-3 dark:bg-emerald-950 bg-stone-200 hover:bg-stone-300 dark:hover:bg-emerald-900 dark:text-amber-200 text-slate-800 font-semibold rounded-xl border border-amber-600/40 transition text-xs font-luxury" title="Reset History">
+            🔄 <span id="btn-reset-text">Reset</span>
+          </button>
+        </div>
+
+        <!-- SUGGESTIONS & PROBABILITY SECTION (Directly Under the Wheel) -->
+        <div class="w-full space-y-4 pt-3 border-t border-amber-900/30">
+          
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold dark:text-amber-200 text-slate-900 flex items-center space-x-2 font-luxury text-sm">
+              <span>💡</span>
+              <span id="lbl-suggested-title">Top Bet Suggestions</span>
+            </h3>
+            <span class="text-[10px] font-luxury bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full">Optimal Odds</span>
+          </div>
+
+          <!-- Suggested Outside Bets -->
+          <div class="space-y-1.5">
+            <div class="text-[11px] font-semibold dark:text-amber-100/70 text-slate-600 font-luxury uppercase tracking-wider" id="lbl-outside-bets-title">Outside Bets (Highest Probabilities)</div>
+            <div id="sim-outside-suggestions" class="grid grid-cols-2 gap-2"></div>
+          </div>
+
+          <!-- Top 5 Individual Numbers Due -->
+          <div class="space-y-1.5">
+            <div class="text-[11px] font-semibold dark:text-amber-100/70 text-slate-600 font-luxury uppercase tracking-wider" id="lbl-top-numbers-title">Top 5 Individual "Due" Numbers</div>
+            <div id="sim-top-numbers" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+
+          <!-- Recent Spins History -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-center text-[11px] dark:text-amber-100/70 text-slate-600 font-luxury">
+              <span id="lbl-spin-history">Recent Spins History</span>
+              <span id="lbl-history-count" class="font-num">0 spins</span>
+            </div>
+            <div id="sim-history-pills" class="flex flex-wrap gap-1.5 p-2 dark:bg-slate-950/80 bg-stone-100 rounded-xl border border-amber-900/30 min-h-[42px] items-center">
+              <span class="text-xs text-slate-500 italic px-2" id="lbl-no-history">No spins recorded yet. Click "Spin Wheel"!</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Vertical Table Hugging Width -->
+      <div class="w-fit self-center lg:self-start dark:bg-slate-950/70 bg-white/80 border border-amber-600/30 rounded-2xl p-4 flex flex-col items-center space-y-3 shadow-xl backdrop-blur">
+        
+        <!-- Heatmap Controls & Scale Legend -->
+        <div class="w-full flex justify-between items-center px-1 text-xs font-luxury dark:text-amber-200 text-slate-800">
+          <label class="flex items-center space-x-1.5 cursor-pointer">
+            <input type="checkbox" id="chk-heatmap" onchange="toggleHeatmap(this.checked)" class="w-3.5 h-3.5 accent-amber-500 rounded cursor-pointer">
+            <span id="lbl-heatmap">Show Probability Heatmap</span>
+          </label>
+          <div id="heatmap-legend" class="hidden flex items-center space-x-1 text-[9px] text-slate-200 font-num">
+            <span class="text-slate-600 dark:text-slate-300">Low</span>
+            <div class="w-3.5 h-2.5 bg-[#1e293b] rounded-sm border border-slate-600"></div>
+            <div class="w-3.5 h-2.5 bg-[#065f46] rounded-sm border border-emerald-500"></div>
+            <div class="w-3.5 h-2.5 bg-[#d97706] rounded-sm border border-amber-400"></div>
+            <div class="w-3.5 h-2.5 bg-[#dc2626] rounded-sm border border-red-500"></div>
+            <span class="text-slate-600 dark:text-slate-300">High</span>
+          </div>
+        </div>
+
+        <!-- Vertical Roulette Grid -->
+        <div class="table-container" id="roulette-table"></div>
+
+        <!-- Bet Inspector -->
+        <div id="bet-inspector" class="w-full text-center text-xs font-semibold text-amber-300 bg-emerald-950/90 border border-amber-600/40 rounded-lg p-2 min-h-[38px] flex items-center justify-center font-luxury shadow-inner">
+          Hover or click any cell, split border, or corner.
+        </div>
+      </div>
+
+    </section>
+
+    <!-- TAB 2: PRACTICAL MODE / MANUAL CASINO INPUT -->
+    <section id="tab-prac" class="hidden space-y-6">
+      <div class="dark:bg-slate-950/80 bg-white/80 border border-amber-600/30 rounded-2xl p-6 shadow-xl backdrop-blur max-w-4xl mx-auto space-y-6">
+        <div>
+          <h2 class="text-lg font-bold text-amber-600 dark:text-amber-400 flex items-center space-x-2 font-luxury">
+            <span>📝</span>
+            <span id="lbl-prac-heading">Practical Mode: Live Casino History Analyzer</span>
+          </h2>
+          <p class="text-xs sm:text-sm dark:text-amber-100/70 text-slate-600 mt-1 italic" id="lbl-prac-sub">
+            Paste or enter the exact sequence of numbers drawn at your casino table. The engine will update the Bayesian recency weights to highlight which sectors and numbers are most "due".
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <label id="lbl-prac-input-title" class="block text-xs font-bold dark:text-amber-200 text-slate-700 uppercase tracking-wider font-luxury">
+            Sequence of Past Numbers (Comma or Space separated):
+          </label>
+          <textarea id="prac-input-sequence" rows="3" placeholder="e.g. 3, 8, 15, 0, 22, 18, 3, 36, 11" class="w-full dark:bg-slate-900 bg-stone-50 border border-amber-700/40 text-amber-700 dark:text-amber-300 font-num text-sm p-3.5 rounded-xl focus:outline-none focus:border-amber-400 transition placeholder:text-slate-400"></textarea>
+          
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div class="flex space-x-2">
+              <button onclick="analyzePracticalInput()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs sm:text-sm transition shadow-md flex items-center space-x-1.5 font-luxury">
+                <span>⚡</span>
+                <span id="btn-analyze-text">Analyze History Now</span>
+              </button>
+              <button onclick="clearPracticalInput()" class="dark:bg-emerald-950 bg-stone-200 hover:bg-stone-300 dark:hover:bg-emerald-900 dark:text-amber-200 text-slate-800 font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm border border-amber-600/40 transition font-luxury">
+                <span id="btn-clear-text">Clear</span>
+              </button>
+            </div>
+            
+            <div class="flex items-center space-x-1 text-xs dark:text-amber-200/80 text-slate-600 font-luxury">
+              <span id="lbl-quick-add">Quick Add:</span>
+              <button onclick="quickAddNum(0)" class="px-2 py-1 bg-emerald-950 text-emerald-300 border border-emerald-700 rounded font-num font-bold">0</button>
+              <button onclick="quickAddNum(3)" class="px-2 py-1 bg-red-950 text-red-300 border border-red-700 rounded font-num font-bold">3</button>
+              <button onclick="quickAddNum(8)" class="px-2 py-1 bg-slate-900 text-slate-200 border border-slate-700 rounded font-num font-bold">8</button>
+              <button onclick="quickAddNum(15)" class="px-2 py-1 bg-black text-amber-300 border border-slate-700 rounded font-num font-bold">15</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="prac-analysis-container" class="hidden space-y-6 pt-4 border-t border-amber-900/30">
+          <div id="prac-comparison-box" class="dark:bg-emerald-950/60 bg-stone-100 border border-amber-500/30 rounded-xl p-4">
+            <div class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1 font-luxury" id="lbl-recency-proof">Recency Proof Analysis</div>
+            <div id="prac-recency-text" class="text-xs sm:text-sm dark:text-slate-200 text-slate-800 leading-relaxed font-num"></div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="dark:bg-slate-900/90 bg-stone-50 p-4 rounded-xl border border-amber-900/30 space-y-3">
+              <div class="text-xs font-bold dark:text-amber-200 text-slate-800 uppercase tracking-wider font-luxury" id="lbl-prac-outside-heading">Outside Bet Probabilities</div>
+              <div id="prac-outside-list" class="space-y-2 text-xs font-num"></div>
+            </div>
+
+            <div class="dark:bg-slate-900/90 bg-stone-50 p-4 rounded-xl border border-amber-900/30 space-y-3">
+              <div class="text-xs font-bold dark:text-amber-200 text-slate-800 uppercase tracking-wider font-luxury" id="lbl-prac-top-pockets">Top 10 Most "Due" Individual Pockets</div>
+              <div id="prac-pockets-list" class="space-y-1.5 font-num text-xs"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MATHEMATICAL THEORY & DECAY PARAMETERS -->
+    <section id="tab-math" class="hidden space-y-6">
+      
+      <!-- Interactive Tuning Sliders Panel -->
+      <div class="dark:bg-slate-950/80 bg-white/80 border border-amber-600/30 rounded-2xl p-6 shadow-xl backdrop-blur space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-amber-900/30 pb-4 gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-amber-600 dark:text-amber-400 font-luxury" id="lbl-math-tuning-title">
+              🎛️ Live Mathematical Parameter Tuning
+            </h2>
+            <p class="text-xs dark:text-amber-100/70 text-slate-600 mt-0.5 italic" id="lbl-math-tuning-sub">
+              Adjust the Decay Penalty (α) and Recovery Lambda (λ) to observe live probability recalibration.
+            </p>
+          </div>
+          <button onclick="resetMathSliders()" class="self-start md:self-auto text-xs dark:bg-emerald-950 bg-stone-200 hover:bg-stone-300 dark:hover:bg-emerald-900 dark:text-amber-200 text-slate-800 px-3 py-1.5 rounded-lg border border-amber-600/40 transition font-luxury">
+            <span id="btn-reset-params">Reset Parameters</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="dark:bg-slate-900/80 bg-stone-50 p-4 rounded-xl border border-amber-900/30 space-y-2">
+            <div class="flex justify-between items-center text-xs font-semibold">
+              <label for="slider-alpha" class="dark:text-amber-200 text-slate-700 font-luxury" id="lbl-param-alpha">Initial Recency Penalty (α)</label>
+              <span id="val-alpha" class="text-amber-600 dark:text-amber-400 font-num font-bold text-sm">0.70</span>
+            </div>
+            <input type="range" id="slider-alpha" min="0.10" max="0.95" step="0.05" value="0.70" oninput="updateMathParams()" class="w-full accent-amber-500 bg-slate-700 rounded-lg h-2 cursor-pointer" />
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight italic" id="desc-alpha">
+              Controls how heavily a pocket's weight drops immediately upon hitting. High α significantly reduces hit likelihood on subsequent spins.
+            </p>
+          </div>
+
+          <div class="dark:bg-slate-900/80 bg-stone-50 p-4 rounded-xl border border-amber-900/30 space-y-2">
+            <div class="flex justify-between items-center text-xs font-semibold">
+              <label for="slider-lambda" class="dark:text-amber-200 text-slate-700 font-luxury" id="lbl-param-lambda">Recovery Speed (λ)</label>
+              <span id="val-lambda" class="text-amber-600 dark:text-amber-400 font-num font-bold text-sm">0.10</span>
+            </div>
+            <input type="range" id="slider-lambda" min="0.01" max="0.50" step="0.01" value="0.10" oninput="updateMathParams()" class="w-full accent-amber-500 bg-slate-700 rounded-lg h-2 cursor-pointer" />
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight italic" id="desc-lambda">
+              Controls the exponential recovery speed. Higher λ restores weight back to 1.0 faster as more rounds elapse.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full Mathematical Explanation Document -->
+      <div class="dark:bg-slate-950/80 bg-white/80 border border-amber-600/30 rounded-2xl p-6 sm:p-8 shadow-xl backdrop-blur space-y-6 text-slate-700 dark:text-slate-300 text-xs sm:text-sm leading-relaxed">
+        <div class="border-b border-amber-900/30 pb-4">
+          <h2 class="text-xl font-bold text-amber-600 dark:text-amber-400 font-luxury" id="math-doc-title">
+            📐 Mathematical Architecture & Theory Guide
+          </h2>
+          <p class="text-xs dark:text-amber-100/70 text-slate-600 mt-1 italic" id="math-doc-subtitle">
+            Explaining independent events, Gambler's Fallacy vs. Subjective Pseudo-Sampling without Replacement.
+          </p>
+        </div>
+        <div id="math-doc-content" class="space-y-6"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footers -->
+  <footer class="border-t border-amber-900/30 dark:bg-slate-950/90 bg-white/90 py-4 mt-8 text-center text-xs dark:text-slate-400 text-slate-600">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center space-x-2 font-luxury">
+        <span class="text-amber-600 dark:text-amber-400 font-bold">Monte Carlo's Bayes Roulette</span>
+        <span>•</span>
+        <span id="footer-tagline">Educational Stochastic Simulator</span>
+      </div>
+      <p id="footer-disclaimer" class="text-slate-500 italic">
+        Designed strictly for mathematical education & probability analysis.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    const WHEEL_ORDER = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10,
+      5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+
+    const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+
+    let state = {
+      lang: 'en',
+      theme: 'dark',
+      activeTab: 'sim',
+      history: [],
+      alpha: 0.70,
+      lambda: 0.10,
+      isSpinning: false,
+      isHeatmapActive: false,
+      wheelAngle: 0,
+      ballAngle: 0
+    };
+
+    const TRANSLATIONS = {
+      en: {
+        headerSubtitle: "Non-Replacement Probability Engine & Recency Analysis",
+        tabSim: "Wheel Simulator",
+        tabPrac: "Practical Mode",
+        tabMath: "Math Theory",
+        lastOutcome: "Last Outcome",
+        spinBtn: "Spin Wheel (Bayesian Weighted)",
+        resetBtn: "Reset",
+        suggestedTitle: "Top Bet Suggestions",
+        outsideTitle: "Outside Bets (Highest Probabilities)",
+        topNumbersTitle: "Top 5 Individual \"Due\" Numbers",
+        spinHistory: "Recent Spins History",
+        noHistory: "No spins recorded yet. Click \"Spin Wheel\"!",
+        pracHeading: "Practical Mode: Live Casino History Analyzer",
+        pracSub: "Paste or enter the exact sequence of numbers drawn at your casino table. The engine will update the Bayesian recency weights to highlight which sectors and numbers are most \"due\".",
+        pracInputTitle: "Sequence of Past Numbers (Comma or Space separated):",
+        analyzeBtn: "Analyze History Now",
+        clearBtn: "Clear Input",
+        quickAdd: "Quick Add:",
+        recencyProof: "Recency Proof Analysis",
+        pracOutsideHeading: "Outside Bet Probabilities",
+        pracTopPockets: "Top 10 Most \"Due\" Individual Pockets",
+        mathTuningTitle: "🎛️ Live Mathematical Parameter Tuning",
+        mathTuningSub: "Adjust the Decay Penalty (α) and Recovery Lambda (λ) to observe live probability recalibration.",
+        resetParams: "Reset Parameters",
+        paramAlpha: "Initial Recency Penalty (α)",
+        descAlpha: "Controls how heavily a pocket's weight drops immediately upon hitting. High α significantly reduces hit likelihood on subsequent spins.",
+        paramLambda: "Recovery Speed (λ)",
+        descLambda: "Controls the exponential recovery speed. Higher λ restores weight back to 1.0 faster as more rounds elapse.",
+        mathDocTitle: "📐 Mathematical Architecture & Theory Guide",
+        mathDocSubtitle: "Explaining independent events, Gambler's Fallacy vs. Subjective Pseudo-Sampling without Replacement.",
+        footerTagline: "Educational Stochastic Simulator",
+        footerDisclaimer: "Designed strictly for mathematical education & probability analysis.",
+        heatmap: "Show Probability Heatmap",
+        mathDocHTML: `
+          <div class="space-y-4 font-serif">
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">1. Real World vs. Non-Replacement Model</h3>
+            <p>In a real physical casino roulette wheel, every spin is an <strong>independent event with replacement</strong>. The theoretical probability of landing on pocket $i$ is constant:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              P(X_t = i) = 1 / 37 ≈ 2.702%
+            </div>
+            <p>Believing a number is "due" simply because it hasn't appeared is classic <em>Gambler's Fallacy</em>. However, in this software, we construct a custom <strong>subjective non-replacement pseudo-sampling model</strong> that dynamically recalculates pocket weights based on recency.</p>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">2. The Recency Weight Decay Algorithm</h3>
+            <p>When a pocket $i$ hits at time step $t$, its likelihood drops immediately and recovers exponentially as subsequent spins ($k_i$) pass:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_i(t) = max( 1 - α · e^(-λ · k_i), 0.05 )
+            </div>
+            <p>Where:</p>
+            <ul class="list-disc list-inside space-y-1 text-xs pl-2">
+              <li><strong>k_i:</strong> Elapsed rounds since pocket $i$ last appeared ($k_i = \infty$ if never seen).</li>
+              <li><strong>α (Alpha):</strong> Initial recency penalty coefficient ($\alpha \in [0, 1]$).</li>
+              <li><strong>λ (Lambda):</strong> Recency recovery decay parameter.</li>
+            </ul>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">3. Mathematical Proof: Age-based Return (e.g. 3 vs 8)</h3>
+            <p>Suppose number <strong>3</strong> appeared 10 spins ago ($k_3 = 10$) and number <strong>8</strong> appeared 2 spins ago ($k_8 = 2$). Under our mathematical decay model:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_3 = 1 - 0.70 · e^(-0.10 · 10) ≈ 0.742 &nbsp;&nbsp;|&nbsp;&nbsp; W_8 = 1 - 0.70 · e^(-0.10 · 2) ≈ 0.427
+            </div>
+            <p>Since $W_3 > W_8$, number <strong>3 is mathematically modeled to have a higher probability of return</strong> than number 8 because it is "older".</p>
+          </div>
+        `
+      },
+      es: {
+        headerSubtitle: "Motor de Probabilidad Sin Reposición y Análisis de Recesión",
+        tabSim: "Simulador de Ruleta",
+        tabPrac: "Modo Práctico",
+        tabMath: "Teoría Matemática",
+        lastOutcome: "Último Resultado",
+        spinBtn: "Girar Ruleta (Ponderado Bayesiano)",
+        resetBtn: "Reiniciar",
+        suggestedTitle: "Sugerencias de Apuesta",
+        outsideTitle: "Apuestas Externas (Mayor Probabilidad)",
+        topNumbersTitle: "Top 5 Números Más Probables",
+        spinHistory: "Historial de Giros",
+        noHistory: "Sin giros registrados. ¡Haz clic en \"Girar Ruleta\"!",
+        pracHeading: "Modo Práctico: Analizador de Historial de Casino",
+        pracSub: "Ingresa la secuencia exacta de números de tu mesa de casino. El motor actualizará los pesos bayesianos para destacar qué sectores están más \"pendientes\".",
+        pracInputTitle: "Secuencia de Números Pasados (Separados por coma o espacio):",
+        analyzeBtn: "Analizar Historial Ahora",
+        clearBtn: "Limpiar Entrada",
+        quickAdd: "Añadir Rápido:",
+        recencyProof: "Análisis Demostrativo de Antigüedad",
+        pracOutsideHeading: "Probabilidades de Apuestas Externas",
+        pracTopPockets: "Top 10 Casillas Individuales Más Pendientes",
+        mathTuningTitle: "🎛️ Ajuste de Parámetros Matemáticos",
+        mathTuningSub: "Ajusta la Penalización de Decaimiento (α) y la Velocidad Lambda (λ) para ver la recalibración en tiempo real.",
+        resetParams: "Restablecer Parámetros",
+        paramAlpha: "Penalización Inicial de Recesión (α)",
+        descAlpha: "Controla cuánto cae el peso de un número al salir. Un α alto reduce sustancialmente la probabilidad en giros subsecuentes.",
+        paramLambda: "Velocidad de Recuperación (λ)",
+        descLambda: "Controla la velocidad de recuperación exponencial. Un λ alto restaura el peso a 1.0 más rápido a medida que pasan las rondas.",
+        mathDocTitle: "📐 Guía de Arquitectura Matemática y Teoría",
+        mathDocSubtitle: "Explicación de eventos independientes, Falacia del Gambetador vs. Seudo-Muestreo Subjetivo Sin Reposición.",
+        footerTagline: "Simulador Estocástico Educativo",
+        footerDisclaimer: "Diseñado estrictamente para educación matemática y análisis de probabilidad.",
+        heatmap: "Mostrar Mapa de Calor de Probabilidad",
+        mathDocHTML: `
+          <div class="space-y-4 font-serif">
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">1. Mundo Real vs. Modelo Sin Reposición</h3>
+            <p>En una ruleta física real de casino, cada giro es un <strong>evento independiente con reposición</strong>. La probabilidad teórica es constante:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              P(X_t = i) = 1 / 37 ≈ 2.702%
+            </div>
+            <p>Creer que un número "tiene que salir" solo porque no ha aparecido es la clásica <em>Falacia del Gambetador</em>. Sin embargo, en este software construimos un <strong>modelo subjetivo de seudo-muestreo sin reposición</strong> que recalcula pesos dinámicamente según la antigüedad.</p>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">2. Algoritmo de Decaimiento por Recesión</h3>
+            <p>Cuando la casilla $i$ sale en el giro $t$, su probabilidad cae y se recupera exponencialmente con los giros transcurridos ($k_i$):</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_i(t) = max( 1 - α · e^(-λ · k_i), 0.05 )
+            </div>
+            <p>Donde:</p>
+            <ul class="list-disc list-inside space-y-1 text-xs pl-2">
+              <li><strong>k_i:</strong> Rondas transcurridas desde que salió la casilla $i$ ($k_i = \infty$ si nunca salió).</li>
+              <li><strong>α (Alpha):</strong> Coeficiente de penalización inicial ($\alpha \in [0, 1]$).</li>
+              <li><strong>λ (Lambda):</strong> Parámetro de velocidad de recuperación exponencial.</li>
+            </ul>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">3. Prueba Matemática: Antigüedad de Retorno (ej. 3 vs 8)</h3>
+            <p>Supongamos que el número <strong>3</strong> salió hace 10 giros ($k_3 = 10$) y el número <strong>8</strong> salió hace 2 giros ($k_8 = 2$). En nuestro modelo de decaimiento:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_3 = 1 - 0.70 · e^(-0.10 · 10) ≈ 0.742 &nbsp;&nbsp;|&nbsp;&nbsp; W_8 = 1 - 0.70 · e^(-0.10 · 2) ≈ 0.427
+            </div>
+            <p>Dado que $W_3 > W_8$, el número <strong>3 está modelado matemáticamente con mayor probabilidad de regresar antes</strong> que el número 8 por ser más "antiguo".</p>
+          </div>
+        `
+      },
+      pt: {
+        headerSubtitle: "Motor de Probabilidade Sem Reposição e Análise de Recência",
+        tabSim: "Simulador de Roleta",
+        tabPrac: "Modo Prático",
+        tabMath: "Teoria Matemática",
+        lastOutcome: "Último Resultado",
+        spinBtn: "Girar Roleta (Ponderado Bayesiano)",
+        resetBtn: "Reiniciar",
+        suggestedTitle: "Sugestões de Aposta",
+        outsideTitle: "Apostas Externas (Maior Probabilidade)",
+        topNumbersTitle: "Top 5 Números Mais Prováveis",
+        spinHistory: "Histórico de Rodadas",
+        noHistory: "Nenhuma rodada registrada. Clique em \"Girar Roleta\"!",
+        pracHeading: "Modo Prático: Analisador de Histórico de Cassino",
+        pracSub: "Insira a sequência exata de números da sua mesa de cassino. O sistema atualizará os pesos bayesianos para destacar quais setores estão mais \"atrasados\".",
+        pracInputTitle: "Sequência de Números Passados (Separados por vírgula ou espaço):",
+        analyzeBtn: "Analisar Histórico Agora",
+        clearBtn: "Limpar Entrada",
+        quickAdd: "Adicionar Rápido:",
+        recencyProof: "Análise Demonstrativa de Antiguidade",
+        pracOutsideHeading: "Probabilidades de Apostas Externas",
+        pracTopPockets: "Top 10 Casas Individuais Mais Atrasadas",
+        mathTuningTitle: "🎛️ Ajuste de Parâmetros Matemáticos",
+        mathTuningSub: "Ajuste a Penalidade de Decaimento (α) e a Velocidade Lambda (λ) para ver a recalibragem em tempo real.",
+        resetParams: "Redefinir Parâmetros",
+        paramAlpha: "Penalidade Inicial de Recência (α)",
+        descAlpha: "Controla quanto o peso de um número cai ao ser sorteado. Um α alto reduz bastante a probabilidade nas rodadas seguintes.",
+        paramLambda: "Velocidade de Recuperação (λ)",
+        descLambda: "Controla a velocidade de recuperação exponencial. Um λ alto restaura o peso para 1.0 mais rápido com o passar das jogadas.",
+        mathDocTitle: "📐 Guia de Arquitetura Matemática e Teoria",
+        mathDocSubtitle: "Explicação de eventos independentes, Falácia do Apostador vs. Pseudo-Amostragem Subjetiva Sem Reposição.",
+        footerTagline: "Simulador Estocástico Educativo",
+        footerDisclaimer: "Projetado estritamente para educação matemática e análise de probabilidade.",
+        heatmap: "Mostrar Mapa de Calor de Probabilidade",
+        mathDocHTML: `
+          <div class="space-y-4 font-serif">
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">1. Mundo Real vs. Modelo Sem Reposição</h3>
+            <p>Em uma roleta física real de cassino, cada rodada é um <strong>evento independente com reposição</strong>. A probabilidade teórica é constante:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              P(X_t = i) = 1 / 37 ≈ 2.702%
+            </div>
+            <p>Acreditar que um número "tem que sair" só porque não aparece há tempos é a clássica <em>Falácia do Apostador</em>. Porém, neste sistema construímos um <strong>modelo subjetivo de pseudo-amostragem sem reposição</strong> que recalcula os pesos dinamicamente com base na antiguidade.</p>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">2. Algoritmo de Decaimento por Recência</h3>
+            <p>Quando a casa $i$ sai na jogada $t$, sua probabilidade cai e se recupera exponencialmente conforme as rodadas ($k_i$) passam:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_i(t) = max( 1 - α · e^(-λ · k_i), 0.05 )
+            </div>
+            <p>Onde:</p>
+            <ul class="list-disc list-inside space-y-1 text-xs pl-2">
+              <li><strong>k_i:</strong> Jogadas decorridas desde que a casa $i$ saiu ($k_i = \infty$ se nunca saiu).</li>
+              <li><strong>α (Alpha):</strong> Coeficiente de penalidade inicial ($\alpha \in [0, 1]$).</li>
+              <li><strong>λ (Lambda):</strong> Parâmetro de velocidade de recuperação exponencial.</li>
+            </ul>
+
+            <h3 class="text-base font-bold text-amber-600 dark:text-amber-400 font-luxury">3. Prova Matemática: Antiguidade de Retorno (ex. 3 vs 8)</h3>
+            <p>Suponha que o número <strong>3</strong> saiu há 10 jogadas ($k_3 = 10$) e o número <strong>8</strong> saiu há 2 jogadas ($k_8 = 2$). Em nosso modelo de decaimento:</p>
+            <div class="dark:bg-slate-900 bg-stone-100 p-3 rounded-lg border border-amber-900/30 font-num text-amber-700 dark:text-amber-300 text-center text-xs">
+              W_3 = 1 - 0.70 · e^(-0.10 · 10) ≈ 0.742 &nbsp;&nbsp;|&nbsp;&nbsp; W_8 = 1 - 0.70 · e^(-0.10 · 2) ≈ 0.427
+            </div>
+            <p>Como $W_3 > W_8$, o número <strong>3 tem maior probabilidade matemática de retornar antes</strong> do que o número 8 por ser mais "antigo".</p>
+          </div>
+        `
+      }
+    };
+
+    function toggleTheme() {
+      const htmlEl = document.documentElement;
+      if (htmlEl.classList.contains('dark')) {
+        htmlEl.classList.remove('dark');
+        state.theme = 'light';
+        document.getElementById('theme-icon').innerText = '🌙';
+        document.getElementById('theme-text').innerText = 'Dark';
+      } else {
+        htmlEl.classList.add('dark');
+        state.theme = 'dark';
+        document.getElementById('theme-icon').innerText = '☀️';
+        document.getElementById('theme-text').innerText = 'Light';
+      }
+    }
+
+    function calculateProbabilities(historyList, alpha = state.alpha, lambda = state.lambda) {
+      const totalSpins = historyList.length;
+      const weights = {};
+
+      for (let i = 0; i <= 36; i++) {
+        const lastIndex = historyList.lastIndexOf(i);
+        if (lastIndex !== -1) {
+          const k_i = totalSpins - 1 - lastIndex;
+          const w = 1.0 - (alpha * Math.exp(-lambda * k_i));
+          weights[i] = Math.max(w, 0.05);
+        } else {
+          weights[i] = 1.0;
+        }
+      }
+
+      const totalWeight = Object.values(weights).reduce((sum, val) => sum + val, 0);
+      const probabilities = {};
+      for (let i = 0; i <= 36; i++) {
+        probabilities[i] = weights[i] / totalWeight;
+      }
+
+      return { weights, probabilities };
+    }
+
+    function evaluateBetSuggestions(probabilities) {
+      let redP = 0, blackP = 0, evenP = 0, oddP = 0, lowP = 0, highP = 0;
+      let doz1 = 0, doz2 = 0, doz3 = 0;
+
+      for (let i = 1; i <= 36; i++) {
+        const p = probabilities[i];
+        if (RED_NUMBERS.has(i)) redP += p; else blackP += p;
+        if (i % 2 === 0) evenP += p; else oddP += p;
+        if (i <= 18) lowP += p; else highP += p;
+        if (i <= 12) doz1 += p; else if (i <= 24) doz2 += p; else doz3 += p;
+      }
+
+      const outsideBets = [
+        { name: "Red", key: "red", prob: redP, color: "bg-red-950 text-red-200 border-red-700/60" },
+        { name: "Black", key: "black", prob: blackP, color: "bg-slate-900 text-slate-200 border-slate-700" },
+        { name: "Even", key: "even", prob: evenP, color: "bg-amber-950/60 text-amber-200 border-amber-700/60" },
+        { name: "Odd", key: "odd", prob: oddP, color: "bg-amber-950/60 text-amber-200 border-amber-700/60" },
+        { name: "1-18 (Low)", key: "low", prob: lowP, color: "bg-emerald-950 text-emerald-200 border-emerald-700/60" },
+        { name: "19-36 (High)", key: "high", prob: highP, color: "bg-emerald-950 text-emerald-200 border-emerald-700/60" }
+      ].sort((a, b) => b.prob - a.prob);
+
+      return { outsideBets };
+    }
+
+    function getProbColor(prob, isCompound = false, count = 1) {
+      const avg = count / 37;
+      const ratio = prob / avg;
+      
+      if (ratio < 0.85) return "#1e293b";
+      if (ratio < 1.05) return "#065f46";
+      if (ratio < 1.25) return "#d97706";
+      return "#dc2626";
+    }
+
+    function initRouletteSVG() {
+      const group = document.getElementById("roulette-wheel-svg");
+      group.innerHTML = "";
+      const numSlices = WHEEL_ORDER.length;
+      const sliceAngle = 360 / numSlices;
+
+      WHEEL_ORDER.forEach((num, index) => {
+        const startAngle = index * sliceAngle;
+        const endAngle = (index + 1) * sliceAngle;
+        
+        const x1 = 200 + 180 * Math.cos((Math.PI / 180) * (startAngle - 90));
+        const y1 = 200 + 180 * Math.sin((Math.PI / 180) * (startAngle - 90));
+        const x2 = 200 + 180 * Math.cos((Math.PI / 180) * (endAngle - 90));
+        const y2 = 200 + 180 * Math.sin((Math.PI / 180) * (endAngle - 90));
+
+        const xi1 = 200 + 60 * Math.cos((Math.PI / 180) * (startAngle - 90));
+        const yi1 = 200 + 60 * Math.sin((Math.PI / 180) * (startAngle - 90));
+        const xi2 = 200 + 60 * Math.cos((Math.PI / 180) * (endAngle - 90));
+        const yi2 = 200 + 60 * Math.sin((Math.PI / 180) * (endAngle - 90));
+
+        const pathData = `M ${xi1} ${yi1} L ${x1} ${y1} A 180 180 0 0 1 ${x2} ${y2} L ${xi2} ${yi2} A 60 60 0 0 0 ${xi1} ${yi1} Z`;
+
+        let fillColor = "#065f46";
+        if (num !== 0) {
+          fillColor = RED_NUMBERS.has(num) ? "#991b1b" : "#0f172a";
+        }
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", pathData);
+        path.setAttribute("fill", fillColor);
+        path.setAttribute("stroke", "#d97706");
+        path.setAttribute("stroke-width", "0.75");
+        group.appendChild(path);
+
+        const textAngle = startAngle + sliceAngle / 2;
+        const tx = 200 + 148 * Math.cos((Math.PI / 180) * (textAngle - 90));
+        const ty = 200 + 148 * Math.sin((Math.PI / 180) * (textAngle - 90));
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", tx);
+        text.setAttribute("y", ty);
+        text.setAttribute("fill", "#f8fafc");
+        text.setAttribute("font-size", "11");
+        text.setAttribute("font-weight", "bold");
+        text.setAttribute("font-family", "Outfit, sans-serif");
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "central");
+        text.setAttribute("transform", `rotate(${textAngle}, ${tx}, ${ty})`);
+        text.textContent = num;
+        group.appendChild(text);
+      });
+    }
+
+    function runSpinAnimation() {
+      if (state.isSpinning) return;
+      state.isSpinning = true;
+
+      const btnSpin = document.getElementById("btn-spin");
+      btnSpin.disabled = true;
+      btnSpin.classList.add("opacity-50", "cursor-not-allowed");
+
+      const { probabilities } = calculateProbabilities(state.history);
+      const randVal = Math.random();
+      let cumulative = 0;
+      let winningNum = 0;
+
+      for (let i = 0; i <= 36; i++) {
+        cumulative += probabilities[i];
+        if (randVal <= cumulative) {
+          winningNum = i;
+          break;
+        }
+      }
+
+      const pocketIdx = WHEEL_ORDER.indexOf(winningNum);
+      const sliceAngle = 360 / 37;
+      const pocketCenterAngle = pocketIdx * sliceAngle + sliceAngle / 2;
+
+      const targetWheelDelta = 360 * 4;
+      const finalWheelRot = state.wheelAngle + targetWheelDelta;
+
+      const targetBallRev = - (360 * 6.5);
+      const rawTargetBall = finalWheelRot + pocketCenterAngle + targetBallRev;
+      const diffFromCurrent = rawTargetBall - state.ballAngle;
+      const roundedRevs = Math.round(diffFromCurrent / 360);
+      const finalBallRot = state.ballAngle + (roundedRevs * 360) + (((finalWheelRot + pocketCenterAngle - state.ballAngle) % 360 + 360) % 360);
+
+      const wheelElement = document.getElementById("roulette-wheel-svg");
+      const ballElement = document.getElementById("ball-svg");
+      const ballCircle = document.getElementById("ball-circle");
+
+      let startTime = null;
+      const duration = 3800;
+
+      const initialWheel = state.wheelAngle;
+      const initialBall = state.ballAngle;
+
+      function animateStep(timestamp) {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        
+        const easeOut = 1 - Math.pow(1 - progress, 5);
+
+        const currentWheel = initialWheel + (finalWheelRot - initialWheel) * easeOut;
+        const currentBall = initialBall + (finalBallRot - initialBall) * easeOut;
+
+        wheelElement.setAttribute("transform", `rotate(${currentWheel}, 200, 200)`);
+        ballElement.setAttribute("transform", `rotate(${currentBall}, 200, 200)`);
+
+        if (progress < 0.65) {
+          ballCircle.setAttribute("cy", "38");
+        } else {
+          const dropProgress = (progress - 0.65) / 0.35;
+          const dropEase = 1 - Math.pow(1 - dropProgress, 3);
+          const currentCy = 38 + (75 - 38) * dropEase;
+          ballCircle.setAttribute("cy", currentCy.toFixed(1));
+        }
+
+        if (progress < 1) {
+          requestAnimationFrame(animateStep);
+        } else {
+          state.wheelAngle = finalWheelRot % 360;
+          state.ballAngle = finalBallRot % 360;
+          state.isSpinning = false;
+          btnSpin.disabled = false;
+          btnSpin.classList.remove("opacity-50", "cursor-not-allowed");
+
+          state.history.push(winningNum);
+          updateUI();
+        }
+      }
+
+      requestAnimationFrame(animateStep);
+    }
+
+    function renderTable() {
+      const table = document.getElementById("roulette-table");
+      table.innerHTML = "";
+
+      // 0 Cell at top
+      const cell0 = document.createElement("div");
+      cell0.className = "cell-number cell-green font-num";
+      cell0.style.gridColumn = "2 / span 3";
+      cell0.style.gridRow = "1";
+      cell0.id = "cell-0";
+      cell0.innerText = "0";
+      cell0.onclick = () => inspectBet([0], "Straight (0)");
+      table.appendChild(cell0);
+
+      const verticalGrid = [
+        [1, 2, 3], [4, 5, 6], [7, 8, 9],
+        [10, 11, 12], [13, 14, 15], [16, 17, 18],
+        [19, 20, 21], [22, 23, 24], [25, 26, 27],
+        [28, 29, 30], [31, 32, 33], [34, 35, 36]
+      ];
+
+      verticalGrid.forEach((rowNums, rIdx) => {
+        rowNums.forEach((num, cIdx) => {
+          const cell = document.createElement("div");
+          const colorClass = RED_NUMBERS.has(num) ? "cell-red" : "cell-black";
+          cell.className = `cell-number ${colorClass} font-num`;
+          cell.id = `cell-${num}`;
+          cell.style.gridRow = `${rIdx + 2}`;
+          cell.style.gridColumn = `${cIdx + 2}`;
+          cell.innerText = num;
+          cell.onclick = () => inspectBet([num], `Straight (${num})`);
+
+          // Horizontal Split (right border)
+          if (cIdx < 2) {
+            const rightNum = rowNums[cIdx + 1];
+            const hSplit = document.createElement("div");
+            hSplit.className = "hitbox-h-split";
+            hSplit.id = `split-${num}-${rightNum}`;
+            hSplit.onclick = (e) => { e.stopPropagation(); inspectBet([num, rightNum], `Split (${num}-${rightNum})`); };
+            cell.appendChild(hSplit);
+          }
+
+          // Vertical Split (bottom border)
+          if (rIdx < 11) {
+            const bottomNum = verticalGrid[rIdx + 1][cIdx];
+            const vSplit = document.createElement("div");
+            vSplit.className = "hitbox-v-split";
+            vSplit.id = `split-${num}-${bottomNum}`;
+            vSplit.onclick = (e) => { e.stopPropagation(); inspectBet([num, bottomNum], `Split (${num}-${bottomNum})`); };
+            cell.appendChild(vSplit);
+          }
+
+          // Corner Bet (4-cell intersection)
+          if (rIdx < 11 && cIdx < 2) {
+            const n1 = num;
+            const n2 = rowNums[cIdx + 1];
+            const n3 = verticalGrid[rIdx + 1][cIdx];
+            const n4 = verticalGrid[rIdx + 1][cIdx + 1];
+            const corner = document.createElement("div");
+            corner.className = "hitbox-corner";
+            corner.id = `corner-${n1}-${n2}-${n3}-${n4}`;
+            corner.onclick = (e) => { e.stopPropagation(); inspectBet([n1, n2, n3, n4], `Corner (${n1},${n2},${n3},${n4})`); };
+            cell.appendChild(corner);
+          }
+
+          table.appendChild(cell);
+        });
+      });
+
+      // Dozens on Left
+      const dozens = [
+        { label: "1st 12", nums: Array.from({length: 12}, (_, i) => i + 1), row: "2 / span 4" },
+        { label: "2nd 12", nums: Array.from({length: 12}, (_, i) => i + 13), row: "6 / span 4" },
+        { label: "3rd 12", nums: Array.from({length: 12}, (_, i) => i + 25), row: "10 / span 4" }
+      ];
+
+      dozens.forEach(d => {
+        const cell = document.createElement("div");
+        cell.className = "cell-outside";
+        cell.style.gridColumn = "1";
+        cell.style.gridRow = d.row;
+        cell.innerText = d.label;
+        cell.onclick = () => inspectBet(d.nums, `Dozen (${d.label})`);
+        table.appendChild(cell);
+      });
+
+      // Columns at bottom
+      const columns = [
+        { label: "2:1", nums: [1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34], col: "2" },
+        { label: "2:1", nums: [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35], col: "3" },
+        { label: "2:1", nums: [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36], col: "4" }
+      ];
+
+      columns.forEach(c => {
+        const cell = document.createElement("div");
+        cell.className = "cell-outside";
+        cell.style.gridRow = "14";
+        cell.style.gridColumn = c.col;
+        cell.innerText = c.label;
+        cell.onclick = () => inspectBet(c.nums, `Column Bet`);
+        table.appendChild(cell);
+      });
+
+      if (state.isHeatmapActive) applyHeatmapColors();
+    }
+
+    function inspectBet(numbers, betName) {
+      const { probabilities } = calculateProbabilities(state.history);
+      const cumulativeProb = numbers.reduce((sum, n) => sum + (probabilities[n] || 0), 0);
+      const percentage = (cumulativeProb * 100).toFixed(2);
+      document.getElementById("bet-inspector").innerText = `${betName} ➔ ${percentage}% Cumulative Probability`;
+    }
+
+    function toggleHeatmap(active) {
+      state.isHeatmapActive = active;
+      document.getElementById("heatmap-legend").style.display = active ? "flex" : "none";
+      if (active) {
+        applyHeatmapColors();
+      } else {
+        renderTable();
+      }
+    }
+
+    function applyHeatmapColors() {
+      const { probabilities } = calculateProbabilities(state.history);
+
+      // Single cells: apply probability color while maintaining distinct 2px gold outlines & inner shadows
+      for (let i = 0; i <= 36; i++) {
+        const cell = document.getElementById(`cell-${i}`);
+        if (cell) {
+          cell.style.backgroundColor = getProbColor(probabilities[i], false, 1);
+          cell.style.border = "2px solid #f59e0b";
+          cell.style.boxShadow = "inset 0 0 0 1px rgba(0,0,0,0.65), 0 1px 3px rgba(0,0,0,0.6)";
+        }
+      }
+
+      // Vertical & Horizontal Splits: high-contrast lines with gold outlines
+      document.querySelectorAll(".hitbox-h-split, .hitbox-v-split").forEach(split => {
+        const ids = split.id.replace("split-", "").split("-").map(Number);
+        const sumP = (probabilities[ids[0]] || 0) + (probabilities[ids[1]] || 0);
+        const col = getProbColor(sumP, true, 2);
+        split.style.backgroundColor = col;
+        split.style.border = "1px solid rgba(251, 191, 36, 0.75)";
+        split.style.boxShadow = `0 0 4px ${col}`;
+      });
+
+      // Corners: circular intersection badges with crisp gold perimeter
+      document.querySelectorAll(".hitbox-corner").forEach(corner => {
+        const ids = corner.id.replace("corner-", "").split("-").map(Number);
+        const sumP = ids.reduce((acc, n) => acc + (probabilities[n] || 0), 0);
+        const col = getProbColor(sumP, true, 4);
+        corner.style.backgroundColor = col;
+        corner.style.border = "1.5px solid #fbbf24";
+        corner.style.boxShadow = `0 0 6px ${col}`;
+      });
+    }
+
+    function updateUI() {
+      const { probabilities } = calculateProbabilities(state.history);
+      const { outsideBets } = evaluateBetSuggestions(probabilities);
+
+      document.getElementById("stat-spins-count").innerText = state.history.length;
+      document.getElementById("lbl-history-count").innerText = `${state.history.length} spins`;
+
+      const lastResultEl = document.getElementById("sim-last-result");
+      const outcomeBadgeEl = document.getElementById("sim-outcome-badge");
+
+      if (state.history.length > 0) {
+        const lastNum = state.history[state.history.length - 1];
+        const color = lastNum === 0 ? "GREEN" : (RED_NUMBERS.has(lastNum) ? "RED" : "BLACK");
+        
+        lastResultEl.innerHTML = `<span class="${color === 'RED' ? 'text-red-500' : (color === 'GREEN' ? 'text-emerald-500' : 'dark:text-slate-100 text-slate-800')}">${lastNum} (${color})</span>`;
+        outcomeBadgeEl.className = `px-3 py-1 rounded-lg text-xs font-bold font-luxury ${color === 'RED' ? 'bg-red-950 text-red-300 border border-red-800' : (color === 'GREEN' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'dark:bg-slate-900 bg-stone-200 dark:text-slate-200 text-slate-800 border border-slate-700')}`;
+        outcomeBadgeEl.innerText = `${color} HIT`;
+      } else {
+        lastResultEl.innerText = "-- (None)";
+        outcomeBadgeEl.className = "px-3 py-1 rounded-lg text-xs font-bold font-luxury dark:bg-slate-900 bg-stone-200 dark:text-amber-200/60 text-slate-600 border border-amber-700/30";
+        outcomeBadgeEl.innerText = "Awaiting Spin";
+      }
+
+      const simOutsideBox = document.getElementById("sim-outside-suggestions");
+      simOutsideBox.innerHTML = outsideBets.slice(0, 4).map(bet => `
+        <div class="p-2 rounded-xl border ${bet.color} flex flex-col justify-between shadow-sm">
+          <span class="text-[11px] font-luxury font-semibold opacity-90">${bet.name}</span>
+          <span class="text-sm font-extrabold font-num mt-0.5">${(bet.prob * 100).toFixed(2)}%</span>
+        </div>
+      `).join('');
+
+      const topNumbersBox = document.getElementById("sim-top-numbers");
+      const sortedNums = Object.entries(probabilities).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      topNumbersBox.innerHTML = sortedNums.map(([numStr, prob]) => {
+        const num = parseInt(numStr);
+        const bg = num === 0 ? "bg-emerald-950 text-emerald-300 border-emerald-700" : (RED_NUMBERS.has(num) ? "bg-red-950 text-red-300 border-red-700" : "bg-slate-900 text-slate-200 border-slate-700");
+        return `
+          <div class="p-1.5 rounded-xl border ${bg} text-center flex flex-col items-center justify-center shadow-sm">
+            <span class="text-sm font-black font-num">${num}</span>
+            <span class="text-[10px] font-num opacity-80">${(prob * 100).toFixed(1)}%</span>
+          </div>
+        `;
+      }).join('');
+
+      const historyPillsBox = document.getElementById("sim-history-pills");
+      if (state.history.length === 0) {
+        historyPillsBox.innerHTML = `<span class="text-xs text-slate-500 italic px-2">${TRANSLATIONS[state.lang].noHistory}</span>`;
+      } else {
+        historyPillsBox.innerHTML = state.history.slice().reverse().map(num => {
+          const bg = num === 0 ? "bg-emerald-600 text-slate-950" : (RED_NUMBERS.has(num) ? "bg-red-600 text-white" : "bg-slate-800 text-slate-200 border border-slate-700");
+          return `<span class="px-2 py-0.5 rounded-lg text-xs font-num font-bold shadow-sm ${bg}">${num}</span>`;
+        }).join('');
+      }
+
+      if (state.isHeatmapActive) applyHeatmapColors();
+      updatePracticalModeUI();
+    }
+
+    function analyzePracticalInput() {
+      const rawText = document.getElementById("prac-input-sequence").value;
+      const tokens = rawText.split(/[\s,]+/).filter(t => t.trim() !== "");
+      const parsedNums = tokens.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n >= 0 && n <= 36);
+
+      state.history = parsedNums;
+      updateUI();
+    }
+
+    function clearPracticalInput() {
+      document.getElementById("prac-input-sequence").value = "";
+      state.history = [];
+      updateUI();
+      document.getElementById("prac-analysis-container").classList.add("hidden");
+    }
+
+    function quickAddNum(num) {
+      const input = document.getElementById("prac-input-sequence");
+      const current = input.value.trim();
+      input.value = current ? `${current}, ${num}` : `${num}`;
+      analyzePracticalInput();
+    }
+
+    function updatePracticalModeUI() {
+      const container = document.getElementById("prac-analysis-container");
+      if (state.history.length === 0) return;
+
+      container.classList.remove("hidden");
+      const { probabilities } = calculateProbabilities(state.history);
+      const { outsideBets } = evaluateBetSuggestions(probabilities);
+
+      const recencyBox = document.getElementById("prac-recency-text");
+      const lastIndex3 = state.history.lastIndexOf(3);
+      const lastIndex8 = state.history.lastIndexOf(8);
+
+      let proofNote = "";
+      if (lastIndex3 !== -1 && lastIndex8 !== -1) {
+        const k3 = state.history.length - 1 - lastIndex3;
+        const k8 = state.history.length - 1 - lastIndex8;
+        const p3 = (probabilities[3] * 100).toFixed(2);
+        const p8 = (probabilities[8] * 100).toFixed(2);
+        
+        if (k3 > k8) {
+          proofNote = `Number <strong>3</strong> was drawn ${k3} spins ago while Number <strong>8</strong> was drawn ${k8} spins ago. According to our decay model, <strong>Number 3 has a higher probability (${p3}%) than Number 8 (${p8}%)</strong> because it is "older" and its weight has recovered further.`;
+        } else if (k8 > k3) {
+          proofNote = `Number <strong>8</strong> was drawn ${k8} spins ago while Number <strong>3</strong> was drawn ${k3} spins ago. According to our decay model, <strong>Number 8 has a higher probability (${p8}%) than Number 3 (${p3}%)</strong> because it is "older".`;
+        } else {
+          proofNote = `Numbers <strong>3</strong> and <strong>8</strong> were both drawn at the exact same recency distance. Their probabilities are identical (${p3}%).`;
+        }
+      } else {
+        proofNote = `Parsed ${state.history.length} spins into the recency engine. Unhit pockets hold maximum weight (1.0), while recently drawn pockets experience exponential decay recovery based on parameters α=${state.alpha} and λ=${state.lambda}.`;
+      }
+      recencyBox.innerHTML = proofNote;
+
+      const pracOutsideList = document.getElementById("prac-outside-list");
+      pracOutsideList.innerHTML = outsideBets.map(bet => `
+        <div class="flex items-center justify-between p-2 rounded-lg dark:bg-slate-950 bg-white border border-amber-900/30 shadow-sm">
+          <span class="font-luxury font-medium dark:text-amber-200 text-slate-800">${bet.name}</span>
+          <span class="font-bold text-amber-600 dark:text-amber-400 font-num">${(bet.prob * 100).toFixed(2)}%</span>
+        </div>
+      `).join('');
+
+      const pracPocketsList = document.getElementById("prac-pockets-list");
+      const top10 = Object.entries(probabilities).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      pracPocketsList.innerHTML = top10.map(([numStr, prob], rank) => {
+        const num = parseInt(numStr);
+        const lastIdx = state.history.lastIndexOf(num);
+        const spinsAgo = lastIdx === -1 ? "Never" : `${state.history.length - 1 - lastIdx} spins ago`;
+        return `
+          <div class="flex items-center justify-between p-2 rounded-lg dark:bg-slate-950 bg-white border border-amber-900/30 shadow-sm">
+            <div class="flex items-center space-x-2">
+              <span class="text-slate-400 w-4">${rank + 1}.</span>
+              <span class="font-bold ${num === 0 ? 'text-emerald-500' : (RED_NUMBERS.has(num) ? 'text-red-500' : 'dark:text-slate-200 text-slate-800')}">Pocket ${num}</span>
+              <span class="text-[10px] text-slate-400 italic">(${spinsAgo})</span>
+            </div>
+            <span class="font-bold text-amber-600 dark:text-amber-400">${(prob * 100).toFixed(2)}%</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      ['sim', 'prac', 'math'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add("hidden");
+        const btn = document.getElementById(`tab-btn-${t}`);
+        btn.className = "flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 dark:text-amber-100/70 text-slate-600 hover:text-amber-600 dark:hover:text-amber-300 hover:bg-amber-500/10";
+      });
+
+      document.getElementById(`tab-${tab}`).classList.remove("hidden");
+      const activeBtn = document.getElementById(`tab-btn-${tab}`);
+      activeBtn.className = "flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all duration-200 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md";
+    }
+
+    function updateMathParams() {
+      state.alpha = parseFloat(document.getElementById("slider-alpha").value);
+      state.lambda = parseFloat(document.getElementById("slider-lambda").value);
+
+      document.getElementById("val-alpha").innerText = state.alpha.toFixed(2);
+      document.getElementById("val-lambda").innerText = state.lambda.toFixed(2);
+
+      updateUI();
+    }
+
+    function resetMathSliders() {
+      document.getElementById("slider-alpha").value = 0.70;
+      document.getElementById("slider-lambda").value = 0.10;
+      updateMathParams();
+    }
+
+    function resetSimulation() {
+      state.history = [];
+      updateUI();
+    }
+
+    function switchLanguage(lang) {
+      state.lang = lang;
+      const t = TRANSLATIONS[lang];
+
+      document.getElementById("header-subtitle").innerText = t.headerSubtitle;
+      document.getElementById("txt-tab-sim").innerText = t.tabSim;
+      document.getElementById("txt-tab-prac").innerText = t.tabPrac;
+      document.getElementById("txt-tab-math").innerText = t.tabMath;
+      document.getElementById("lbl-last-outcome").innerText = t.lastOutcome;
+      document.getElementById("btn-spin-text").innerText = t.spinBtn;
+      document.getElementById("btn-reset-text").innerText = t.resetBtn;
+      document.getElementById("lbl-suggested-title").innerText = t.suggestedTitle;
+      document.getElementById("lbl-outside-bets-title").innerText = t.outsideTitle;
+      document.getElementById("lbl-top-numbers-title").innerText = t.topNumbersTitle;
+      document.getElementById("lbl-spin-history").innerText = t.spinHistory;
+      document.getElementById("lbl-prac-heading").innerText = t.pracHeading;
+      document.getElementById("lbl-prac-sub").innerText = t.pracSub;
+      document.getElementById("lbl-prac-input-title").innerText = t.pracInputTitle;
+      document.getElementById("btn-analyze-text").innerText = t.analyzeBtn;
+      document.getElementById("btn-clear-text").innerText = t.clearBtn;
+      document.getElementById("lbl-quick-add").innerText = t.quickAdd;
+      document.getElementById("lbl-recency-proof").innerText = t.recencyProof;
+      document.getElementById("lbl-prac-outside-heading").innerText = t.pracOutsideHeading;
+      document.getElementById("lbl-prac-top-pockets").innerText = t.pracTopPockets;
+      document.getElementById("lbl-math-tuning-title").innerText = t.mathTuningTitle;
+      document.getElementById("lbl-math-tuning-sub").innerText = t.mathTuningSub;
+      document.getElementById("btn-reset-params").innerText = t.resetParams;
+      document.getElementById("lbl-param-alpha").innerText = t.paramAlpha;
+      document.getElementById("desc-alpha").innerText = t.descAlpha;
+      document.getElementById("lbl-param-lambda").innerText = t.paramLambda;
+      document.getElementById("desc-lambda").innerText = t.descLambda;
+      document.getElementById("math-doc-title").innerText = t.mathDocTitle;
+      document.getElementById("math-doc-subtitle").innerText = t.mathDocSubtitle;
+      document.getElementById("math-doc-content").innerHTML = t.mathDocHTML;
+      document.getElementById("footer-tagline").innerText = t.footerTagline;
+      document.getElementById("footer-disclaimer").innerText = t.footerDisclaimer;
+      document.getElementById("lbl-heatmap").innerText = t.heatmap;
+
+      updateUI();
+    }
+
+    window.onload = function () {
+      initRouletteSVG();
+      renderTable();
+      switchLanguage('en');
+    };
+  </script>
+</body>
+</html>
